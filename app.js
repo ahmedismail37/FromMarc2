@@ -453,7 +453,7 @@ async function renderAnalysisView() {
         extractDot.style.backgroundColor = 'var(--success-color)';
 
         list.innerHTML += `<li style="margin-bottom: 1rem; display: flex; align-items: center; gap: 1rem; animation: fadeIn 0.5s;">
-            <span id="step-ai" class="status-dot pulsing"></span> Sending to OpenAI for analysis...</li>`;
+            <span id="step-ai" class="status-dot pulsing"></span> Sending to AI for analysis...</li>`;
 
         // 2. Call AI
         const analysis = await AIService.analyzeJD(text);
@@ -587,7 +587,11 @@ function renderOverviewView() {
     container.innerHTML = `
         <h2>Candidate Comparison Table</h2>
         <p style="color: var(--text-muted); margin-bottom: 2rem;">Select candidates to proceed to the interview stage.</p>
-        
+        <div style="margin-bottom: 1rem;">
+            <button id="back-btn1" style="background:none; border:none; color: var(--text-muted); cursor: pointer; display: flex; align-items: center; gap: 0.5rem; font-size: 1rem;">
+                <span class="material-icons-round">arrow_back</span> Back
+            </button>
+        </div>
         <div style="background: var(--surface-color); border-radius: var(--radius-md); border: 1px solid var(--border-color); overflow: hidden;">
             <table style="width: 100%; border-collapse: collapse;">
                 <thead>
@@ -610,7 +614,7 @@ function renderOverviewView() {
         </div>
     `;
     contentArea.appendChild(container);
-
+    document.getElementById('back-btn1').addEventListener('click', () => goToStep(4));
     const tbody = document.getElementById('candidates-table-body');
     const countLabel = document.getElementById('selection-count');
     const proceedBtn = document.getElementById('batch-reveal-btn');
@@ -849,3 +853,4 @@ function handleCVUpload(files) {
         goToStep(4);
     }, 1000);
 }
+
