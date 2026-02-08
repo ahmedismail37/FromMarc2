@@ -1,0 +1,1092 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hiring Assistant Agent</title>
+
+  <!-- Existing styles -->
+  <link rel="stylesheet" href="style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
+
+  <!-- Google APIs JS client + Google Identity Services (for Schedule view) -->
+  <script async defer src="https://apis.google.com/js/api.js"></script>
+  <script async defer src="https://accounts.google.com/gsi/client"></script>
+
+  <!-- Minimal extra CSS to make the Schedule view look okay even with your existing style.css -->
+  <style>
+    /* Schedule view containers (namespaced to avoid conflicts) */
+    .sched-wrap { padding: 8px; }
+    .sched-topbar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom: 12px; }
+    .sched-row { display:flex; gap:12px; flex-wrap:wrap; align-items:end; }
+    .sched-card { border:1px solid rgba(0,0,0,.12); border-radius:12px; padding:14px; margin-top:14px; background:#fff; }
+    .sched-muted { color:#666; font-size:13px; }
+    .sched-hidden { display:none; }
+    .sched-slots { display:grid; gap:8px; margin-top:10px; }
+    .sched-slot { display:flex; gap:10px; align-items:center; color:#202124; justify-content:space-between; border:1px solid rgba(0,0,0,.08); border-radius:10px; padding:10px; }
+    .sched-input, .sched-btn, .sched-textarea { padding:10px; font-size:14px; }
+    .sched-textarea { width:100%; min-height:120px; }
+    .sched-btn { cursor:pointer; }
+    .sched-gear { border:1px solid rgba(0,0,0,.12); border-radius:10px; padding:10px 12px; background:#fff; display:flex; align-items:center; gap:8px; }
+    .sched-dot { width:10px; height:10px; border-radius:999px; background:#bbb; }
+    .sched-dot.ok { background:#22c55e; }
+    .sched-dot.bad { background:#ef4444; }
+    .sched-pill { display:inline-block; padding:2px 8px; border:1px solid rgba(0,0,0,.12); border-radius:999px; font-size:12px; }
+
+    /* Modal base */
+    .sched-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.4); display:none; align-items:center; justify-content:center; padding:20px; z-index:2000; }
+    .sched-modal { width:min(860px, 100%); background:#fff; border-radius:16px; border:1px solid rgba(0,0,0,.12); box-shadow:0 20px 60px rgba(0,0,0,.25); overflow:hidden; }
+    .sched-modal header { display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid rgba(0,0,0,.12); }
+    .sched-modal main { padding:16px; }
+    .sched-modal footer { padding:14px 16px; border-top:1px solid rgba(0,0,0,.12); display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap; }
+    .sched-grid { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:12px; }
+    @media (max-width:760px){ .sched-grid { grid-template-columns:1fr; } }
+    .sched-checklist { border:1px dashed rgba(0,0,0,.18); border-radius:12px; padding:12px; }
+    .sched-checklist ul { margin:8px 0 0; padding-left:18px; }
+
+    /* Error popup modal */
+    .sched-error-modal { width:min(560px, 100%); }
+    .sched-error-title { display:flex; align-items:center; gap:10px; }
+    .sched-error-badge { width:28px; height:28px; border-radius:10px; background:#fee2e2; display:flex; align-items:center; justify-content:center; border:1px solid #fecaca; }
+    .sched-error-badge span { font-weight:700; color:#b91c1c; }
+    .sched-error-box { border:1px solid rgba(0,0,0,.1); border-radius:12px; padding:12px; background:#fafafa; white-space:pre-wrap; font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; font-size:12px; }
+
+    /* Book button */
+    .sched-bookbtn { margin-left: 10px; }
+  </style>
+</head>
+
+<body>
+  <div id="app">
+    <header class="app-header">
+      <div class="logo">
+        <span class="material-icons-round">smart_toy</span>
+        <h1>Hiring Agent</h1>
+      </div>
+      <div class="header-actions">
+        <button id="open-settings" class="icon-btn">
+          <span class="material-icons-round">settings</span>
+        </button>
+        <div class="status-indicator">
+          <span class="status-dot"></span>
+          <span id="system-status">Ready</span>
+        </div>
+      </div>
+    </header>
+
+    <main class="main-container">
+      <!-- Sidebar / Progress -->
+      <aside class="sidebar">
+        <nav class="steps-nav">
+          <button class="step-btn active" data-step="1">
+            <span class="step-num">1</span>
+            Job Description
+          </button>
+          <button class="step-btn" data-step="2">
+            <span class="step-num">2</span>
+            JD Analysis
+          </button>
+          <button class="step-btn" data-step="3">
+            <span class="step-num">3</span>
+            Upload CVs
+          </button>
+          <button class="step-btn" data-step="4">
+            <span class="step-num">4</span>
+            Matching
+          </button>
+          <button class="step-btn" data-step="5">
+            <span class="step-num">5</span>
+            Overview
+          </button>
+          <button class="step-btn" data-step="6">
+            <span class="step-num">6</span>
+            Selection
+          </button>
+
+          <!-- Schedule button -->
+          <button class="step-btn" id="schedule-step-btn" data-step="schedule">
+            <span class="step-num">7</span>
+            Schedule
+          </button>
+        </nav>
+      </aside>
+
+      <!-- Content Area -->
+      <section id="content-area" class="content-area">
+        <div class="welcome-view">
+          <h2 style="font-family: Montserrat, sans-serif;">Welcome to the AI Hiring Assistant</h2>
+          <p>Streamline your recruitment process with unbiased, automated candidate parsing and matching.</p>
+          <button id="start-btn" class="primary-btn">Begin New Session</button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Parsing Libraries -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+  <script>
+    if (window['pdfjs-dist/build/pdf']) {
+      window['pdfjs-dist/build/pdf'].GlobalWorkerOptions.workerSrc =
+        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+  </script>
+
+  <!-- Existing App UI settings modal -->
+  <div id="settings-overlay" class="overlay" style="display:none;">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>AI Settings</h3>
+        <button id="close-settings" class="icon-btn">
+          <span class="material-icons-round">close</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <label for="api-key">Gemini API Key</label>
+        <div class="input-group">
+          <input type="password" id="api-key" placeholder="AIza...">
+          <button id="save-key-btn" class="primary-btn">Save Key</button>
+        </div>
+        <p class="helper-text">Your key is stored locally in your browser and is only used for JD/CV analysis.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======= SCHEDULE VIEW ======= -->
+  <template id="schedule-view-template">
+    <div class="sched-wrap">
+      <div class="sched-topbar">
+        <div>
+          <h2 style="margin:0;">Interview Availability Finder</h2>
+          <div class="sched-muted">Configure keys in ⚙️ Settings. Errors show in a popup.</div>
+        </div>
+
+        <button id="sched_settingsBtn" class="sched-gear" title="Settings" type="button">
+          <span id="sched_settingsDot" class="sched-dot bad"></span>
+          <span>⚙️ Settings</span>
+          <span id="sched_missingPill" class="sched-pill">Missing: 2</span>
+        </button>
+      </div>
+
+      <div class="sched-row">
+        <button id="sched_authorizeBtn" class="sched-btn" disabled type="button">Sign in</button>
+        <button id="sched_signoutBtn" class="sched-btn sched-hidden" type="button">Sign out</button>
+        <span id="sched_authHint" class="sched-muted">Open Settings and fill required fields to enable sign-in.</span>
+      </div>
+
+      <div class="sched-card">
+        <h3 style="margin-top:0;">Search window</h3>
+        <div class="sched-row">
+          <label>
+            <span class="sched-muted">From (date)</span>
+            <input id="sched_fromDate" class="sched-input" type="date" />
+          </label>
+
+          <label>
+            <span class="sched-muted">To (date)</span>
+            <input id="sched_toDate" class="sched-input" type="date" />
+          </label>
+
+          <label>
+            <span class="sched-muted">Candidate email</span>
+            <input id="sched_candidateEmail" class="sched-input" placeholder="candidate@example.com" />
+          </label>
+
+          <div>
+            <button id="sched_findBtn" class="sched-btn" disabled type="button">Find availability</button>
+            <div class="sched-muted" style="margin-top:8px;">Sign in first.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sched-card">
+        <h3 style="margin-top:0;">Available slots</h3>
+        <div id="sched_status" class="sched-muted">Not signed in.</div>
+        <div id="sched_slots" class="sched-slots"></div>
+      </div>
+
+      <div class="sched-card">
+        <h3 style="margin-top:0;">Email draft</h3>
+        <p class="sched-muted">Pick a slot and click <strong>Book selected slot</strong>. Google will send the calendar invite email automatically.</p>
+        <textarea id="sched_emailBody" class="sched-textarea" placeholder="Confirmation email (optional) will appear here after booking..."></textarea>
+        <div class="sched-row" style="margin-top:10px;">
+          <input id="sched_emailSubject" class="sched-input" style="min-width:320px;" value="Interview scheduling" />
+          <button id="sched_mailtoBtn" class="sched-btn" disabled type="button">Open mailto</button>
+        </div>
+
+        <div class="sched-row" style="margin-top:10px;">
+          <button id="sched_bookBtn" class="sched-btn sched-bookbtn" disabled type="button"><strong>Book selected slot</strong></button>
+          <span id="sched_bookHint" class="sched-muted">Select exactly one slot to book.</span>
+        </div>
+      </div>
+
+      <!-- SETTINGS MODAL -->
+      <div id="sched_settingsBackdrop" class="sched-backdrop" role="dialog" aria-modal="true">
+        <div class="sched-modal">
+          <header>
+            <strong>Schedule Settings</strong>
+            <button id="sched_closeSettingsBtn" class="sched-btn" type="button">✕</button>
+          </header>
+
+          <main>
+            <div class="sched-grid">
+              <div class="sched-checklist">
+                <div><strong>Required fields status</strong></div>
+                <div class="sched-muted">Sign-in is enabled only when required fields are filled.</div>
+                <ul id="sched_missingList"></ul>
+              </div>
+
+              <div class="sched-checklist">
+                <div><strong>Where to get these</strong></div>
+                <div class="sched-muted" style="margin-top:8px;">
+                  In Google Cloud Console:
+                  <ul>
+                    <li>Enable <strong>Google Calendar API</strong></li>
+                    <li>Create <strong>API Key</strong> (restrict to your origin)</li>
+                    <li>Create <strong>OAuth Client ID</strong> (Web application)</li>
+                    <li>OAuth consent screen: add your account as <strong>Test user</strong> (if Testing)</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            <div style="height:12px;"></div>
+
+            <div class="sched-grid">
+              <label>
+                <span class="sched-muted">Google API Key (required)</span>
+                <input id="sched_s_apiKey" class="sched-input" placeholder="AIza..." autocomplete="off" />
+              </label>
+
+              <label>
+                <span class="sched-muted">Google OAuth Client ID (required)</span>
+                <input id="sched_s_clientId" class="sched-input" placeholder="xxxxx.apps.googleusercontent.com" autocomplete="off" />
+              </label>
+
+              <label>
+                <span class="sched-muted">Calendar ID (optional)</span>
+                <input id="sched_s_calendarId" class="sched-input" placeholder="primary" />
+              </label>
+
+              <label>
+                <span class="sched-muted">Timezone (optional)</span>
+                <input id="sched_s_tz" class="sched-input" placeholder="Europe/Paris" />
+              </label>
+
+              <label>
+                <span class="sched-muted">Workday start</span>
+                <input id="sched_s_workStart" class="sched-input" type="time" value="09:00" />
+              </label>
+
+              <label>
+                <span class="sched-muted">Workday end</span>
+                <input id="sched_s_workEnd" class="sched-input" type="time" value="17:00" />
+              </label>
+
+              <label>
+                <span class="sched-muted">Meeting length (minutes)</span>
+                <input id="sched_s_durationMin" class="sched-input" type="number" value="30" min="10" step="5" />
+              </label>
+
+              <label>
+                <span class="sched-muted">Buffer between meetings (minutes)</span>
+                <input id="sched_s_bufferMin" class="sched-input" type="number" value="10" min="0" step="5" />
+              </label>
+            </div>
+
+            <div style="margin-top:12px;" class="sched-muted">
+              Stored locally in your browser via <code>localStorage</code>. Use “Clear settings” to remove.
+            </div>
+          </main>
+
+          <footer>
+            <button id="sched_clearSettingsBtn" class="sched-btn" type="button">Clear settings</button>
+            <button id="sched_saveSettingsBtn" class="sched-btn" type="button"><strong>Save</strong></button>
+          </footer>
+        </div>
+      </div>
+
+      <!-- ERROR POPUP MODAL -->
+      <div id="sched_errorBackdrop" class="sched-backdrop" role="alertdialog" aria-modal="true">
+        <div class="sched-modal sched-error-modal">
+          <header>
+            <div class="sched-error-title">
+              <div class="sched-error-badge"><span>!</span></div>
+              <strong id="sched_errorTitle">Error</strong>
+            </div>
+            <button id="sched_closeErrorBtn" class="sched-btn" type="button">✕</button>
+          </header>
+          <main>
+            <div id="sched_errorMessage" class="sched-muted" style="margin-bottom:10px;"></div>
+            <div id="sched_errorDetails" class="sched-error-box sched-hidden"></div>
+            <div class="sched-muted" style="margin-top:10px;">
+              Tip: API key must be restricted to your domain, OAuth client must include your origin, and Calendar API must be enabled.
+            </div>
+          </main>
+          <footer>
+            <button id="sched_toggleDetailsBtn" class="sched-btn" type="button">Show details</button>
+            <button id="sched_openSettingsFromErrorBtn" class="sched-btn" type="button"><strong>Open Settings</strong></button>
+          </footer>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <!-- Existing app.js -->
+  <script src="app.js"></script>
+
+  <!-- ======= Schedule feature JS (merged: availability + booking) ======= -->
+  <script>
+    (function scheduleFeature() {
+      const scheduleBtn = document.getElementById("schedule-step-btn");
+      const contentArea = document.getElementById("content-area");
+      const template = document.getElementById("schedule-view-template");
+
+      if (!scheduleBtn || !contentArea || !template) return;
+
+      scheduleBtn.addEventListener("click", () => {
+        document.querySelectorAll(".steps-nav .step-btn").forEach(b => b.classList.remove("active"));
+        scheduleBtn.classList.add("active");
+
+        contentArea.innerHTML = "";
+        contentArea.appendChild(template.content.cloneNode(true));
+        initScheduleView();
+      });
+
+      function initScheduleView() {
+        const $ = (id) => document.getElementById(id);
+
+        // Elements
+        const settingsBtn = $("sched_settingsBtn");
+        const settingsBackdrop = $("sched_settingsBackdrop");
+        const closeSettingsBtn = $("sched_closeSettingsBtn");
+        const saveSettingsBtn = $("sched_saveSettingsBtn");
+        const clearSettingsBtn = $("sched_clearSettingsBtn");
+        const missingList = $("sched_missingList");
+        const settingsDot = $("sched_settingsDot");
+        const missingPill = $("sched_missingPill");
+
+        const authorizeBtn = $("sched_authorizeBtn");
+        const signoutBtn = $("sched_signoutBtn");
+        const findBtn = $("sched_findBtn");
+        const authHint = $("sched_authHint");
+        const statusEl = $("sched_status");
+        const slotsEl = $("sched_slots");
+
+        const emailBodyEl = $("sched_emailBody");
+        const emailSubjectEl = $("sched_emailSubject");
+        const mailtoBtn = $("sched_mailtoBtn");
+
+        const bookBtn = $("sched_bookBtn");
+        const bookHint = $("sched_bookHint");
+
+        // Settings fields
+        const fields = {
+          apiKey: $("sched_s_apiKey"),
+          clientId: $("sched_s_clientId"),
+          calendarId: $("sched_s_calendarId"),
+          tz: $("sched_s_tz"),
+          workStart: $("sched_s_workStart"),
+          workEnd: $("sched_s_workEnd"),
+          durationMin: $("sched_s_durationMin"),
+          bufferMin: $("sched_s_bufferMin"),
+        };
+
+        // Search fields
+        const fromDateEl = $("sched_fromDate");
+        const toDateEl = $("sched_toDate");
+        const candidateEmailEl = $("sched_candidateEmail");
+
+        // Error popup
+        const errorBackdrop = $("sched_errorBackdrop");
+        const closeErrorBtn = $("sched_closeErrorBtn");
+        const errorTitleEl = $("sched_errorTitle");
+        const errorMessageEl = $("sched_errorMessage");
+        const errorDetailsEl = $("sched_errorDetails");
+        const toggleDetailsBtn = $("sched_toggleDetailsBtn");
+        const openSettingsFromErrorBtn = $("sched_openSettingsFromErrorBtn");
+
+        const LS_KEY = "cal_availability_settings_v1";
+
+        // Google libs state
+        let gapiInited = false;
+        let gisInited = false;
+        let tokenClient = null;
+
+        /**
+         * IMPORTANT: switched scope to calendar.events (write) to enable booking.
+         * If you only want to "find slots", use readonly, but booking requires write access.
+         */
+        const SCOPES = "https://www.googleapis.com/auth/calendar.events";
+        const DISCOVERY_DOC = "https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest";
+
+        // Selected slot (exactly one for booking)
+        let selectedSlot = null;
+
+        // -------- popup helpers --------
+        function showErrorPopup({ title = "Error", message = "Something went wrong.", details = "" } = {}) {
+          errorTitleEl.textContent = title;
+          errorMessageEl.textContent = message;
+
+          if (details) {
+            errorDetailsEl.textContent = details;
+            errorDetailsEl.classList.remove("sched-hidden");
+            toggleDetailsBtn.textContent = "Hide details";
+          } else {
+            errorDetailsEl.textContent = "";
+            errorDetailsEl.classList.add("sched-hidden");
+            toggleDetailsBtn.textContent = "Show details";
+          }
+          errorBackdrop.style.display = "flex";
+        }
+
+        function closeErrorPopup() { errorBackdrop.style.display = "none"; }
+
+        closeErrorBtn.addEventListener("click", closeErrorPopup);
+        errorBackdrop.addEventListener("click", (e) => { if (e.target === errorBackdrop) closeErrorPopup(); });
+
+        toggleDetailsBtn.addEventListener("click", () => {
+          const hidden = errorDetailsEl.classList.toggle("sched-hidden");
+          toggleDetailsBtn.textContent = hidden ? "Show details" : "Hide details";
+        });
+
+        openSettingsFromErrorBtn.addEventListener("click", () => {
+          closeErrorPopup();
+          openSettings();
+        });
+
+        function stringifyErr(err) {
+          try {
+            if (typeof err === "string") return err;
+            return JSON.stringify(err, Object.getOwnPropertyNames(err), 2);
+          } catch {
+            return String(err);
+          }
+        }
+
+        function friendlyError(err) {
+          const raw = stringifyErr(err);
+          const code = err?.result?.error?.code || err?.status || err?.code;
+          const msg = err?.result?.error?.message || err?.message || "Unexpected error.";
+
+          if (String(msg).includes("API key not valid") || String(msg).includes("keyInvalid")) {
+            return { title: "Invalid API Key", message: "Your Google API Key is invalid or not authorized for this origin.", details: raw };
+          }
+          if (String(msg).includes("accessNotConfigured")) {
+            return { title: "Calendar API not enabled", message: "Google Calendar API isn't enabled for your project in Google Cloud Console.", details: raw };
+          }
+          if (String(msg).includes("Origin") || String(msg).includes("redirect_uri_mismatch")) {
+            return { title: "OAuth origin mismatch", message: "Your OAuth Client ID is not authorized for this site origin. Add this origin in Google Cloud Console.", details: raw };
+          }
+          if (String(msg).includes("access_denied")) {
+            return { title: "Access denied", message: "Consent screen may be in Testing and your account not allowed, or app is Internal. Add yourself as Test user (same project) or publish.", details: raw };
+          }
+          if (code === 401 || String(msg).toLowerCase().includes("login required")) {
+            return { title: "Not signed in", message: "Please sign in again and retry.", details: raw };
+          }
+          return { title: "Error", message: msg, details: raw };
+        }
+
+        // -------- booking helpers (MERGED) --------
+        async function bookSlotByInvitingCandidate({
+          calendarId = "primary",
+          slot,
+          candidateEmail,
+          candidateName = "",
+          hrEmail = "",
+          tz = "UTC",
+          jobTitle = "Interview",
+          location = "Google Meet",
+          addGoogleMeet = true,
+        }) {
+          if (!candidateEmail) throw new Error("candidateEmail is required");
+          if (!slot?.startMs || !slot?.endMs) throw new Error("slot.startMs and slot.endMs are required");
+
+          const startISO = new Date(slot.startMs).toISOString();
+          const endISO = new Date(slot.endMs).toISOString();
+
+          const event = {
+            summary: `${jobTitle}${candidateName ? " — " + candidateName : ""}`,
+            location,
+            description: [
+              `Interview booking confirmed.`,
+              hrEmail ? `HR: ${hrEmail}` : "",
+              `Candidate: ${candidateEmail}`,
+              ``,
+              `If you need to reschedule, reply to the invite email.`,
+            ].filter(Boolean).join("\n"),
+            start: { dateTime: startISO, timeZone: tz },
+            end: { dateTime: endISO, timeZone: tz },
+            attendees: [{ email: candidateEmail }],
+            guestsCanInviteOthers: false,
+            guestsCanModify: false,
+            guestsCanSeeOtherGuests: false,
+            reminders: {
+              useDefault: false,
+              overrides: [
+                { method: "email", minutes: 24 * 60 },
+                { method: "popup", minutes: 30 },
+              ],
+            },
+          };
+
+          if (addGoogleMeet) {
+            event.conferenceData = {
+              createRequest: {
+                requestId: (crypto?.randomUUID ? crypto.randomUUID() : String(Date.now())),
+                conferenceSolutionKey: { type: "hangoutsMeet" },
+              },
+            };
+          }
+
+          const resp = await gapi.client.calendar.events.insert({
+            calendarId,
+            resource: event,
+            sendUpdates: "all",
+            conferenceDataVersion: addGoogleMeet ? 1 : 0,
+          });
+
+          const created = resp.result;
+
+          return {
+            eventId: created.id,
+            htmlLink: created.htmlLink,
+            meetLink: created.conferenceData?.entryPoints?.find(e => e.entryPointType === "video")?.uri || "",
+            createdEvent: created,
+          };
+        }
+
+        function buildCandidateConfirmationText({ candidateEmail, startMs, endMs, tz, meetLink, eventLink }) {
+          const start = new Intl.DateTimeFormat(undefined, {
+            timeZone: tz, weekday: "short", year: "numeric", month: "short", day: "2-digit",
+            hour: "2-digit", minute: "2-digit"
+          }).format(new Date(startMs));
+
+          const end = new Intl.DateTimeFormat(undefined, {
+            timeZone: tz, hour: "2-digit", minute: "2-digit"
+          }).format(new Date(endMs));
+
+          return `Hi,
+
+I’ve sent you a calendar invite for:
+• ${start} – ${end} (${tz})
+
+Please open the invite email and click “Yes” to confirm.
+
+${meetLink ? `Google Meet: ${meetLink}\n` : ""}${eventLink ? `Event link: ${eventLink}\n` : ""}
+
+Best regards,`;
+        }
+
+        // -------- settings helpers --------
+        function defaultSettings() {
+          return {
+            apiKey: "",
+            clientId: "",
+            calendarId: "primary",
+            tz: "Europe/Paris",
+            workStart: "09:00",
+            workEnd: "17:00",
+            durationMin: 30,
+            bufferMin: 10,
+          };
+        }
+
+        function loadSettings() {
+          try {
+            const raw = localStorage.getItem(LS_KEY);
+            if (!raw) return defaultSettings();
+            const parsed = JSON.parse(raw);
+            return { ...defaultSettings(), ...parsed };
+          } catch {
+            return defaultSettings();
+          }
+        }
+
+        function saveSettings(s) {
+          localStorage.setItem(LS_KEY, JSON.stringify(s));
+        }
+
+        function clearSettings() {
+          localStorage.removeItem(LS_KEY);
+        }
+
+        function settingsFromUI() {
+          return {
+            apiKey: fields.apiKey.value.trim(),
+            clientId: fields.clientId.value.trim(),
+            calendarId: (fields.calendarId.value.trim() || "primary"),
+            tz: (fields.tz.value.trim() || "UTC"),
+            workStart: fields.workStart.value,
+            workEnd: fields.workEnd.value,
+            durationMin: parseInt(fields.durationMin.value, 10) || 30,
+            bufferMin: parseInt(fields.bufferMin.value, 10) || 0,
+          };
+        }
+
+        function setUIFromSettings(s) {
+          fields.apiKey.value = s.apiKey || "";
+          fields.clientId.value = s.clientId || "";
+          fields.calendarId.value = s.calendarId || "primary";
+          fields.tz.value = s.tz || "Europe/Paris";
+          fields.workStart.value = s.workStart || "09:00";
+          fields.workEnd.value = s.workEnd || "17:00";
+          fields.durationMin.value = s.durationMin ?? 30;
+          fields.bufferMin.value = s.bufferMin ?? 10;
+        }
+
+        function requiredMissing(s) {
+          const missing = [];
+          if (!s.apiKey) missing.push("Google API Key");
+          if (!s.clientId) missing.push("Google OAuth Client ID");
+          return missing;
+        }
+
+        function setStatus(msg) { statusEl.textContent = msg; }
+        function clearSlots() { slotsEl.innerHTML = ""; }
+        function resetEmailDraft() { emailBodyEl.value = ""; }
+
+        function setSignedInUI(signedIn) {
+          authorizeBtn.classList.toggle("sched-hidden", signedIn);
+          signoutBtn.classList.toggle("sched-hidden", !signedIn);
+          findBtn.disabled = !signedIn;
+        }
+
+        function updateBookUI() {
+          // must be signed in + have exactly one slot selected + have candidate email
+          const token = gapi?.client?.getToken?.();
+          const candidateEmail = candidateEmailEl.value.trim();
+          const canBook = !!token && !!selectedSlot && !!candidateEmail;
+          bookBtn.disabled = !canBook;
+          bookHint.textContent = !candidateEmail
+            ? "Enter candidate email to book."
+            : (!selectedSlot ? "Select exactly one slot to book." : "Ready to book.");
+        }
+
+        function updateMissingUI() {
+          const s = settingsFromUI();
+          const missing = requiredMissing(s);
+
+          missingList.innerHTML = "";
+          if (missing.length === 0) {
+            missingList.innerHTML = "<li>All required fields are filled ✅</li>";
+            settingsDot.classList.remove("bad"); settingsDot.classList.add("ok");
+          } else {
+            for (const item of missing) {
+              const li = document.createElement("li");
+              li.textContent = item + " is missing";
+              missingList.appendChild(li);
+            }
+            settingsDot.classList.remove("ok"); settingsDot.classList.add("bad");
+          }
+
+          missingPill.textContent = "Missing: " + missing.length;
+          refreshAuthEnablement();
+        }
+
+        function openSettings() { settingsBackdrop.style.display = "flex"; }
+        function closeSettings() { settingsBackdrop.style.display = "none"; }
+
+        settingsBtn.addEventListener("click", openSettings);
+        closeSettingsBtn.addEventListener("click", closeSettings);
+        settingsBackdrop.addEventListener("click", (e) => { if (e.target === settingsBackdrop) closeSettings(); });
+
+        saveSettingsBtn.addEventListener("click", () => {
+          try {
+            const s = settingsFromUI();
+            saveSettings(s);
+            updateMissingUI();
+            ensureAuthWiredIfPossible();
+            closeSettings();
+            setStatus("Settings saved.");
+          } catch (err) {
+            showErrorPopup(friendlyError(err));
+          }
+        });
+
+        clearSettingsBtn.addEventListener("click", () => {
+          try {
+            clearSettings();
+            const s = defaultSettings();
+            setUIFromSettings(s);
+            updateMissingUI();
+            signOutSilently();
+            setStatus("Settings cleared.");
+          } catch (err) {
+            showErrorPopup(friendlyError(err));
+          }
+        });
+
+        for (const k of Object.keys(fields)) {
+          fields[k].addEventListener("input", updateMissingUI);
+          fields[k].addEventListener("change", updateMissingUI);
+        }
+
+        // enable/disable booking when candidate email changes
+        candidateEmailEl.addEventListener("input", updateBookUI);
+
+        // -------- dates init --------
+        (function initDates() {
+          const today = new Date();
+          const yyyy = today.getFullYear();
+          const mm = String(today.getMonth() + 1).padStart(2, "0");
+          const dd = String(today.getDate()).padStart(2, "0");
+          fromDateEl.value = `${yyyy}-${mm}-${dd}`;
+
+          const plus7 = new Date(today);
+          plus7.setDate(today.getDate() + 7);
+          const yyyy2 = plus7.getFullYear();
+          const mm2 = String(plus7.getMonth() + 1).padStart(2, "0");
+          const dd2 = String(plus7.getDate()).padStart(2, "0");
+          toDateEl.value = `${yyyy2}-${mm2}-${dd2}`;
+        })();
+
+        // -------- Google init / auth wiring --------
+        function refreshAuthEnablement() {
+          const s = settingsFromUI();
+          const missing = requiredMissing(s);
+          const canAuth = (missing.length === 0 && gapiInited && gisInited);
+
+          authorizeBtn.disabled = !canAuth;
+          authHint.textContent = canAuth
+            ? "Ready. Click Sign in."
+            : "Open Settings and fill required fields to enable sign-in.";
+
+          if (!canAuth) {
+            findBtn.disabled = true;
+            setSignedInUI(false);
+          }
+        }
+
+        async function ensureAuthWiredIfPossible() {
+          try {
+            refreshAuthEnablement();
+            const s = settingsFromUI();
+            if (requiredMissing(s).length !== 0) return;
+            if (!gapiInited || !gisInited) return;
+
+            await gapi.client.init({
+              apiKey: s.apiKey,
+              discoveryDocs: [DISCOVERY_DOC],
+            });
+
+            tokenClient = google.accounts.oauth2.initTokenClient({
+              client_id: s.clientId,
+              scope: SCOPES,
+              callback: () => {},
+            });
+
+            const token = gapi.client.getToken();
+            setSignedInUI(!!token);
+            if (token) setStatus("Signed in. Ready to find availability.");
+            updateBookUI();
+          } catch (err) {
+            showErrorPopup(friendlyError(err));
+          }
+        }
+
+        authorizeBtn.addEventListener("click", () => {
+          try {
+            const s = settingsFromUI();
+            if (requiredMissing(s).length) { openSettings(); return; }
+            if (!tokenClient) {
+              showErrorPopup({ title: "Auth not ready", message: "Auth client is not initialized. Open Settings and click Save.", details: "" });
+              return;
+            }
+
+            tokenClient.callback = (resp) => {
+              if (resp?.error) { showErrorPopup(friendlyError(resp)); return; }
+              setSignedInUI(true);
+              setStatus("Signed in. Ready to find availability.");
+              updateBookUI();
+            };
+
+            const token = gapi.client.getToken();
+            tokenClient.requestAccessToken({ prompt: token ? "" : "consent" });
+          } catch (err) {
+            showErrorPopup(friendlyError(err));
+          }
+        });
+
+        signoutBtn.addEventListener("click", () => {
+          try {
+            signOutSilently();
+            setStatus("Signed out.");
+            clearSlots();
+            resetEmailDraft();
+            mailtoBtn.disabled = true;
+            selectedSlot = null;
+            updateBookUI();
+          } catch (err) {
+            showErrorPopup(friendlyError(err));
+          }
+        });
+
+        function signOutSilently() {
+          const token = gapi.client.getToken();
+          if (token && token.access_token) {
+            try { google.accounts.oauth2.revoke(token.access_token); } catch {}
+            try { gapi.client.setToken(""); } catch {}
+          }
+          setSignedInUI(false);
+        }
+
+        // Wait for scripts
+        (function waitForGoogleLibs() {
+          const gapiTimer = setInterval(() => {
+            if (window.gapi) {
+              clearInterval(gapiTimer);
+              gapi.load("client", () => {
+                gapiInited = true;
+                ensureAuthWiredIfPossible();
+              });
+            }
+          }, 50);
+
+          const gisTimer = setInterval(() => {
+            if (window.google && window.google.accounts && window.google.accounts.oauth2) {
+              clearInterval(gisTimer);
+              gisInited = true;
+              ensureAuthWiredIfPossible();
+            }
+          }, 50);
+        })();
+
+        // -------- Free/busy & slots --------
+        findBtn.addEventListener("click", async () => {
+          try {
+            clearSlots();
+            resetEmailDraft();
+            mailtoBtn.disabled = true;
+            selectedSlot = null;
+            updateBookUI();
+
+            const token = gapi.client.getToken();
+            if (!token) {
+              showErrorPopup({ title: "Not signed in", message: "Please sign in first, then try again.", details: "" });
+              return;
+            }
+
+            const s = settingsFromUI();
+            const fromDate = fromDateEl.value;
+            const toDate = toDateEl.value;
+
+            if (!fromDate || !toDate) {
+              showErrorPopup({ title: "Missing dates", message: "Please set both From and To dates.", details: "" });
+              return;
+            }
+
+            const timeMin = new Date(fromDate + "T00:00:00.000Z").toISOString();
+            const to = new Date(toDate + "T00:00:00.000Z");
+            to.setDate(to.getDate() + 1);
+            const timeMax = to.toISOString();
+
+            setStatus("Querying free/busy…");
+
+            const calendarId = s.calendarId || "primary";
+            const resp = await gapi.client.calendar.freebusy.query({
+              timeMin,
+              timeMax,
+              timeZone: s.tz,
+              items: [{ id: calendarId }],
+            });
+
+            const busy = (resp.result.calendars?.[calendarId]?.busy) || [];
+            const busyIntervals = busy.map(b => ({
+              start: new Date(b.start).getTime(),
+              end: new Date(b.end).getTime(),
+            })).sort((a, b) => a.start - b.start);
+
+            const slots = computeAvailableSlots({
+              fromDate, toDate,
+              workStart: s.workStart,
+              workEnd: s.workEnd,
+              durationMin: s.durationMin,
+              bufferMin: s.bufferMin,
+              busyIntervals,
+            });
+
+            renderSlots(slots, s.tz);
+
+            setStatus(slots.length
+              ? `Found ${slots.length} available slots. Select one and click Book.`
+              : "No available slots found in that window."
+            );
+          } catch (err) {
+            showErrorPopup(friendlyError(err));
+          }
+        });
+
+        function computeAvailableSlots({ fromDate, toDate, workStart, workEnd, durationMin, bufferMin, busyIntervals }) {
+          const result = [];
+          const dayStart = new Date(fromDate + "T00:00:00.000Z");
+          const dayEnd = new Date(toDate + "T00:00:00.000Z");
+          dayEnd.setHours(0,0,0,0);
+
+          const durMs = durationMin * 60 * 1000;
+          const stepMs = (durationMin + bufferMin) * 60 * 1000;
+
+          for (let d = new Date(dayStart); d.getTime() <= dayEnd.getTime(); d.setDate(d.getDate() + 1)) {
+            const y = d.getUTCFullYear();
+            const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+            const da = String(d.getUTCDate()).padStart(2, "0");
+
+            const ws = new Date(`${y}-${m}-${da}T${workStart}:00.000Z`).getTime();
+            const we = new Date(`${y}-${m}-${da}T${workEnd}:00.000Z`).getTime();
+            if (we <= ws) continue;
+
+            const dayBusy = busyIntervals
+              .filter(b => b.end > ws && b.start < we)
+              .map(b => ({ start: Math.max(b.start, ws), end: Math.min(b.end, we) }))
+              .sort((a, b) => a.start - b.start);
+
+            const merged = [];
+            for (const b of dayBusy) {
+              if (!merged.length || b.start > merged[merged.length - 1].end) merged.push({ ...b });
+              else merged[merged.length - 1].end = Math.max(merged[merged.length - 1].end, b.end);
+            }
+
+            let cursor = ws;
+            for (const b of merged) {
+              if (b.start > cursor) pushSlotsInRange(cursor, b.start);
+              cursor = Math.max(cursor, b.end);
+            }
+            if (cursor < we) pushSlotsInRange(cursor, we);
+
+            function pushSlotsInRange(freeStart, freeEnd) {
+              for (let t = freeStart; t + durMs <= freeEnd; t += stepMs) {
+                result.push({ startMs: t, endMs: t + durMs });
+              }
+            }
+          }
+          return result;
+        }
+
+        // Render as radio-like selection (one slot only) to book safely
+        function renderSlots(slots, tz) {
+          slotsEl.innerHTML = "";
+          let currentSelectedKey = null;
+
+          for (const s of slots) {
+            const start = new Date(s.startMs);
+            const end = new Date(s.endMs);
+            const label = formatInTZ(start, tz) + " → " + formatInTZ(end, tz);
+
+            const row = document.createElement("div");
+            row.className = "sched-slot";
+
+            const left = document.createElement("div");
+            left.innerHTML = `<div><strong>${escapeHtml(label)}</strong></div><div class="sched-muted">${escapeHtml(tz)}</div>`;
+
+            const radio = document.createElement("input");
+            radio.type = "radio";
+            radio.name = "sched_slot_pick";
+
+            const key = `${s.startMs}-${s.endMs}`;
+            radio.addEventListener("change", () => {
+              currentSelectedKey = key;
+              selectedSlot = { startMs: s.startMs, endMs: s.endMs };
+              updateBookUI();
+            });
+
+            row.appendChild(left);
+            row.appendChild(radio);
+            slotsEl.appendChild(row);
+
+            // reset selection
+            if (currentSelectedKey === null) {
+              selectedSlot = null;
+            }
+          }
+          updateBookUI();
+        }
+
+        // BOOK BUTTON: create the event + Google emails the invite
+        bookBtn.addEventListener("click", async () => {
+          try {
+            const s = settingsFromUI();
+            const candidateEmail = candidateEmailEl.value.trim();
+
+            if (!selectedSlot) {
+              showErrorPopup({ title: "No slot selected", message: "Select a slot first.", details: "" });
+              return;
+            }
+            if (!candidateEmail) {
+              showErrorPopup({ title: "Missing candidate email", message: "Enter candidate email first.", details: "" });
+              return;
+            }
+
+            setStatus("Booking… creating calendar invite and emailing candidate…");
+
+            const res = await bookSlotByInvitingCandidate({
+              calendarId: s.calendarId || "primary",
+              slot: selectedSlot,
+              candidateEmail,
+              tz: s.tz,
+              jobTitle: "Interview",
+              location: "Google Meet",
+              addGoogleMeet: true,
+            });
+
+            // Build a *separate* optional confirmation email text (not required since Google sends invite)
+            emailBodyEl.value = buildCandidateConfirmationText({
+              candidateEmail,
+              startMs: selectedSlot.startMs,
+              endMs: selectedSlot.endMs,
+              tz: s.tz,
+              meetLink: res.meetLink,
+              eventLink: res.htmlLink,
+            });
+
+            // Allow mailto if you still want to send a follow-up message
+            mailtoBtn.disabled = false;
+            mailtoBtn.onclick = () => {
+              const subject = encodeURIComponent(emailSubjectEl.value || "Interview scheduling");
+              const mailto = `mailto:${encodeURIComponent(candidateEmail)}?subject=${subject}&body=${encodeURIComponent(emailBodyEl.value)}`;
+              window.location.href = mailto;
+            };
+
+            setStatus("Booked ✅ Google invite sent to candidate. Event added to your calendar.");
+
+          } catch (err) {
+            showErrorPopup(friendlyError(err));
+            setStatus("Booking failed.");
+          }
+        });
+
+        function formatInTZ(dateObj, tz) {
+          return new Intl.DateTimeFormat(undefined, {
+            timeZone: tz,
+            weekday: "short",
+            year: "numeric",
+            month: "short",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+          }).format(dateObj);
+        }
+
+        function escapeHtml(s) {
+          return String(s).replace(/[&<>"']/g, c => ({
+            "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;"
+          }[c]));
+        }
+
+        // -------- boot --------
+        try {
+          setUIFromSettings(loadSettings());
+          updateMissingUI();
+          updateBookUI();
+        } catch (err) {
+          showErrorPopup(friendlyError(err));
+        }
+      }
+    })();
+  </script>
+</body>
+
+</html>
